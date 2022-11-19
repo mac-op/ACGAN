@@ -30,6 +30,7 @@ import matplotlib.pyplot as plt
 
 from ssim import SSIM
 
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 def compute_score(loss, min_thres, max_thres):
     if loss <= min_thres:
@@ -45,9 +46,6 @@ def compute_score(loss, min_thres, max_thres):
 # -----
 # VAE Build Blocks
 
-# #####
-# TODO: Complete the encoder architecture
-# #####
 
 class Encoder(nn.Module):
     def __init__(
@@ -76,25 +74,13 @@ class Encoder(nn.Module):
         self.fc1 = nn.Linear(18*4*4, self.latent_dim)
         self.fc2 = nn.Linear(18*4*4, self.latent_dim)
 
-        # #####
-        # TODO: Complete the encoder architecture to calculate mu and log_var
-        # mu and log_var will be used as inputs for the Reparameterization Trick,
-        # generating latent vector z we need
-        # #####
-
     def forward(self, x):
-        # #####
-        # TODO: Complete the encoder architecture to calculate mu and log_var
-        # #####
         x = self.encoder(x)
         mu = self.fc1(x)
         log_var = self.fc2(x)
 
         return mu, log_var
 
-# #####
-# TODO: Complete the decoder architecture
-# #####
 
 class Decoder(nn.Module):
     def __init__(
@@ -106,9 +92,6 @@ class Decoder(nn.Module):
         self.latent_dim = latent_dim
         self.out_channels = out_channels
 
-        # #####
-        # TODO: Complete the decoder architecture to reconstruct image from latent vector z
-        # #####
 
         self.decoder = nn.Sequential(
             nn.Linear(self.latent_dim, 18*4*4),
@@ -121,9 +104,6 @@ class Decoder(nn.Module):
         )
 
     def forward(self, z):
-        # #####
-        # TODO: Complete the decoder architecture to reconstruct image xg from latent vector z
-        # #####
         return self.decoder(z)
 
 
@@ -152,31 +132,30 @@ class VAE(nn.Module):
         return z
 
     def forward(self, x, y):
-        # #####
-        # TODO: Complete forward for VAE
-        # #####
         """Forward for CVAE.
         Returns:
             xg: reconstructed image from decoder.
             mu, log_var: mean and log(std) of z ~ N(mu, sigma^2)
             z: latent vector, z = mu + sigma * eps, acquired from reparameterization trick. 
         """
+        mu, log_var = self.encode(x)
+        z = self.reparameterize(mu, log_var)
+        xg = self.decode(z)
+        return xg, mu, log_var
 
 
     def generate(
             self,
             n_samples: int,
     ):
-        # #####
-        # TODO: Complete generate method for VAE
-        # #####
-
         """Randomly sample from the latent space and return
         the reconstructed samples.
         Returns:
             xg: reconstructed image
             None: a placeholder simply.
         """
+        x_in = torch.randn((n_samples, self.latent_dim))
+        xg = self.decode(x_in)
 
         return xg, None
 
@@ -184,7 +163,6 @@ class VAE(nn.Module):
 # #####
 # Wrapper for Conditional Variational Autoencoder
 # #####
-
 class CVAE(nn.Module):
     def __init__(
             self,
@@ -248,7 +226,6 @@ class CVAE(nn.Module):
 # #####
 # Wrapper for KL Divergence
 # #####
-
 class KLDivLoss(nn.Module):
     def __init__(
             self,
@@ -281,7 +258,7 @@ num_epochs = 60
 validate_every = 1
 print_every = 100
 
-conditional = True  # Flag to use VAE or CVAE
+conditional = False  # Flag to use VAE or CVAE
 
 if conditional:
     name = "cvae"
@@ -395,10 +372,9 @@ def denormalize(x):
     Return:
         x_denormalized: denormalized image as numpy.uint8, in [0, 255].
     """
-    # #####
-    # TODO: Complete denormalization.
-    # #####
-    raise NotImplementedError
+    x = x.permute((0, 2,3,1)) * 255
+    x = x.detach().cpu().numpy().astype(np.uint8)
+    return x
 
 
 # Loop HERE
