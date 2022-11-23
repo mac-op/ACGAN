@@ -28,6 +28,9 @@ import torchvision.utils
 import numpy as np
 import matplotlib.pyplot as plt
 
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+
 def compute_score(acc, min_thres, max_thres):
     if acc <= min_thres:
         base_score = 0.0
@@ -57,13 +60,40 @@ class Generator(nn.Module):
         # TODO: Complete the generator architecture
         # #####
 
+        self.generator = nn.Sequential(
+            nn.ConvTranspose2d(self.latent_dim + 10, 256, 4, 2, 1),
+            nn.BatchNorm2d(256),
+            nn.ReLU(),
+            nn.ConvTranspose2d(256, 128, 4, 2, 1),
+            nn.BatchNorm2d(128),
+            nn.ReLU(),
+            nn.ConvTranspose2d(128, 64, 4, 2, 1),
+            nn.BatchNorm2d(64),
+            nn.ReLU(),
+            nn.ConvTranspose2d(64, 32, 4, 2, 1),
+            nn.BatchNorm2d(32),
+            nn.ReLU(),
+            nn.ConvTranspose2d(32, self.out_channels, 4, 2, 1),
+            nn.Tanh()
+        )
 
-        
-    def forward(self, z, y):
+    def forward(self, z, y_in):
         # #####
         # TODO: Complete the generator architecture
         # #####
-        raise NotImplementedError
+        y_in = F.one_hot(y_in, self.num_classes).to(device).unsqueeze(-1).unsqueeze(-1)
+        z = torch.concat((z, y_in), dim=1)
+        return self.generator(z)
+
+
+def weights_init(m):
+    classname = m.__class__.__name__
+    if classname.find('Conv') != -1:
+        m.weight.data.normal_(0.0, 0.02)
+    elif classname.find('BatchNorm') != -1:
+        m.weight.data.normal_(1.0, 0.02)
+        m.bias.data.fill_(0)
+
 
 # #####
 # TODO: Complete the Discriminator architecture
@@ -73,17 +103,30 @@ class Discriminator(nn.Module):
     def __init__(self, in_channels=3):
         super(Discriminator, self).__init__()
         self.in_channels = in_channels
-        # #####
-        # TODO: Complete the discriminator architecture
-        # #####
-
-
+        self.discriminator = nn.Sequential(
+            nn.Conv2d(self.in_channels, 32, 4, 2, 1),
+            nn.LeakyReLU(),
+            nn.Conv2d(32, 64, 4, 2, 1),
+            nn.BatchNorm2d(64),
+            nn.LeakyReLU(),
+            nn.Conv2d(64, 128, 4, 2, 1),
+            nn.BatchNorm2d(128),
+            nn.LeakyReLU(),
+            nn.Flatten(),
+        )
+        self.score = nn.Sequential(
+            nn.Linear(128 * 4 * 4, 1),
+            nn.Sigmoid())
+        self.classifier = nn.Sequential(
+            nn.Linear(128 * 4 * 4, 10),
+            nn.LogSoftmax())
 
     def forward(self, x):
         # #####
         # TODO: Complete the discriminator architecture
         # #####
-        raise NotImplementedError
+        xd = self.discriminator(x)
+        return self.score(xd), self.classifier(xd)
         
 
 # -----
@@ -93,7 +136,7 @@ classes = ('plane', 'car', 'bird', 'cat',
 
 # NOTE: Feel free to change the hyperparameters as long as you meet the marking requirement
 batch_size = 256
-workers = 6
+workers = 0
 latent_dim = 128
 lr = 0.001
 num_epochs = 150
@@ -142,9 +185,10 @@ test_loader = torch.utils.data.DataLoader(
 # #####
 # TODO: Initialize your models HERE.
 # #####
-generator = None
-
-discriminator = None
+generator = Generator(latent_dim, 3, 10)
+generator.apply(weights_init)
+discriminator = Discriminator(3)
+discriminator.apply(weights_init)
 
 # -----
 # Losses
@@ -153,8 +197,8 @@ discriminator = None
 # TODO: Initialize your loss criterion.
 # #####
 
-adv_loss = None
-aux_loss = None
+adv_loss = nn.BCELoss()
+aux_loss = nn.NLLLoss()
 
 if torch.cuda.is_available():
     generator = generator.cuda()
@@ -168,8 +212,8 @@ if torch.cuda.is_available():
 # TODO: Initialize your optimizer(s).
 # #####
 
-optimizer_D = None
-optimizer_G = None
+optimizer_D = optim.Adam(discriminator.parameters(), lr=lr)
+optimizer_G = optim.Adam(generator.parameters(), lr=lr)
 
 
 # -----
@@ -181,18 +225,27 @@ def denormalize(x):
     # #####
     # TODO: Complete denormalization.
     # #####
-    raise NotImplementedError
+    x = x.permute((0, 2,3,1)) * 255
+    x = x.detach().cpu().numpy().astype(np.uint8)
+    return x
+
 
 # For visualization part
 # Generate 20 random sample for visualization
 # Keep this outside the loop so we will generate near identical images with the same latent featuresper train epoch
-random_z = None
-random_y = None
+random_z = torch.randn((20, latent_dim, 1, 1)).to(device)
+random_y = torch.randint(low=0, high=10, size=(20, )).to(device)
 
 
 # #####
 # TODO: Complete train_step for AC-GAN
 # #####
+def compute_acc(preds, labels):
+    preds_ = preds.data.max(1)[1]
+    correct = preds_.eq(labels.data).cpu().sum()
+    acc = float(correct) / float(len(labels.data)) * 100.0
+    return acc
+
 
 def train_step(x, y):
     """One train step for AC-GAN.
@@ -201,7 +254,42 @@ def train_step(x, y):
         - average train loss over batch for discriminator
         - auxiliary train accuracy over batch
     """
-    raise NotImplementedError
+    fake_z = torch.randn((x.shape[0], latent_dim, 1, 1)).to(device)
+    fake_y = torch.randint(low=0, high=10, size=(x.shape[0], )).to(device)
+
+    optimizer_D.zero_grad()
+    disc, cl = discriminator(x)
+    real_label = torch.full((x.shape[0], ), 1).to(device).to(torch.float32)
+    disc_err = adv_loss(disc.squeeze(), real_label)
+    class_err = aux_loss(cl, y)
+    err_D_real = disc_err + class_err
+
+    err_D_real.backward()
+    optimizer_D.step()
+
+    g_im = generator(fake_z, fake_y)
+    disc, cl_g = discriminator(g_im.detach())
+    fake_label = torch.full((x.shape[0],), 0).to(device).to(torch.float32)
+    disc_G_err = adv_loss(disc.squeeze(), fake_label)
+    class_D_err = aux_loss(cl_g, fake_y)
+    err_D_fake = disc_G_err + class_D_err
+    total = err_D_fake + err_D_real
+
+    acc = compute_acc(torch.concat((cl, cl_g)), torch.concat((y, fake_y)))
+
+    err_D_fake.backward()
+    optimizer_D.step()
+
+    optimizer_G.zero_grad()
+    disc_G, cl_G = discriminator(g_im)
+    gen_err = adv_loss(disc_G.squeeze(), real_label)
+    class_G_err = aux_loss(cl_G, y)
+    error_fake = gen_err + class_G_err
+
+    error_fake.backward()
+    optimizer_G.step()
+
+    return error_fake, total, acc
 
 def test(
     test_loader,
@@ -249,10 +337,10 @@ for epoch in range(1, num_epochs + 1):
 
         # Print
         if i % print_every == 0:
-            print("Epoch {}, Iter {}: LossD: {:.6f} LossG: {:.6f}, D_acc {:.6f}".format(epoch, i, loss_g, loss_d, acc_d))
+            print("Epoch {}, Iter {}: LossG: {:.6f} LossD: {:.6f}, D_acc {:.6f}".format(epoch, i, loss_g, loss_d, acc_d))
 
-    g_losses.append(avg_loss_g / len(train_dataset))
-    d_losses.append(avg_loss_d / len(train_dataset))
+    g_losses.append(avg_loss_g.item() / len(train_dataset))
+    d_losses.append(avg_loss_d.item() / len(train_dataset))
 
     # Save
     if epoch % validate_every == 0:
