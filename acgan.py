@@ -1,19 +1,3 @@
-"""Assignment 9
-Part 2: AC-GAN
-
-NOTE: Feel free to check: https://arxiv.org/pdf/1610.09585.pdf
-
-NOTE: Write Down Your Info below:
-
-    Name:
-
-    CCID:
-
-    Auxiliary Test Accuracy on Cifar10 Test Set:
-
-
-"""
-
 import os
 
 import torch
@@ -30,25 +14,6 @@ import matplotlib.pyplot as plt
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-
-def compute_score(acc, min_thres, max_thres):
-    if acc <= min_thres:
-        base_score = 0.0
-    elif acc >= max_thres:
-        base_score = 100.0
-    else:
-        base_score = float(acc - min_thres) / (max_thres - min_thres) \
-                     * 100
-    return base_score
-
-
-# -----
-# AC-GAN Build Blocks
-
-# #####
-# TODO: Complete the generator architecture
-# #####
-
 class Generator(nn.Module):
     def __init__(self, latent_dim=128, out_channels=3, num_classes=10):
         super(Generator, self).__init__()
@@ -61,27 +26,36 @@ class Generator(nn.Module):
         # #####
 
         self.generator = nn.Sequential(
-            nn.ConvTranspose2d(self.latent_dim + 10, 256, 4, 2, 1),
-            nn.BatchNorm2d(256),
-            nn.ReLU(),
+            nn.Linear(self.latent_dim + 10, 256*2*2),
+            nn.LeakyReLU(0.2),
+            nn.Unflatten(1, (256, 2, 2)),
+            # nn.ConvTranspose2d(self.latent_dim + 10, 256, 4, 2, 1),
+            # nn.BatchNorm2d(256),
+            # nn.LeakyReLU(0.2),
             nn.ConvTranspose2d(256, 128, 4, 2, 1),
+            nn.LeakyReLU(0.2),
             nn.BatchNorm2d(128),
-            nn.ReLU(),
+            nn.Dropout(0.2),
+
             nn.ConvTranspose2d(128, 64, 4, 2, 1),
+            nn.LeakyReLU(0.2),
             nn.BatchNorm2d(64),
-            nn.ReLU(),
+            nn.Dropout(0.2),
+
             nn.ConvTranspose2d(64, 32, 4, 2, 1),
+            nn.LeakyReLU(0.2),
             nn.BatchNorm2d(32),
-            nn.ReLU(),
+            nn.Dropout(0.2),
+
             nn.ConvTranspose2d(32, self.out_channels, 4, 2, 1),
-            nn.Tanh()
+            nn.Sigmoid()
         )
 
     def forward(self, z, y_in):
         # #####
         # TODO: Complete the generator architecture
         # #####
-        y_in = F.one_hot(y_in, self.num_classes).to(device).unsqueeze(-1).unsqueeze(-1)
+        y_in = F.one_hot(y_in, self.num_classes).to(device)
         z = torch.concat((z, y_in), dim=1)
         return self.generator(z)
 
@@ -95,23 +69,19 @@ def weights_init(m):
         m.bias.data.fill_(0)
 
 
-# #####
-# TODO: Complete the Discriminator architecture
-# #####
-
 class Discriminator(nn.Module):
     def __init__(self, in_channels=3):
         super(Discriminator, self).__init__()
         self.in_channels = in_channels
         self.discriminator = nn.Sequential(
             nn.Conv2d(self.in_channels, 32, 4, 2, 1),
-            nn.LeakyReLU(),
+            nn.LeakyReLU(0.2),
             nn.Conv2d(32, 64, 4, 2, 1),
             nn.BatchNorm2d(64),
-            nn.LeakyReLU(),
+            nn.LeakyReLU(0.2),
             nn.Conv2d(64, 128, 4, 2, 1),
             nn.BatchNorm2d(128),
-            nn.LeakyReLU(),
+            nn.LeakyReLU(0.2),
             nn.Flatten(),
         )
         self.score = nn.Sequential(
@@ -233,13 +203,10 @@ def denormalize(x):
 # For visualization part
 # Generate 20 random sample for visualization
 # Keep this outside the loop so we will generate near identical images with the same latent featuresper train epoch
-random_z = torch.randn((20, latent_dim, 1, 1)).to(device)
+random_z = torch.randn((20, latent_dim)).to(device)
 random_y = torch.randint(low=0, high=10, size=(20, )).to(device)
 
 
-# #####
-# TODO: Complete train_step for AC-GAN
-# #####
 def compute_acc(preds, labels):
     preds_ = preds.data.max(1)[1]
     correct = preds_.eq(labels.data).cpu().sum()
@@ -248,13 +215,8 @@ def compute_acc(preds, labels):
 
 
 def train_step(x, y):
-    """One train step for AC-GAN.
-    You should return loss_g, loss_d, acc_d, a.k.a:
-        - average train loss over batch for generator
-        - average train loss over batch for discriminator
-        - auxiliary train accuracy over batch
-    """
-    fake_z = torch.randn((x.shape[0], latent_dim, 1, 1)).to(device)
+    """One train step for AC-GAN."""
+    fake_z = torch.randn((x.shape[0], latent_dim)).to(device)
     fake_y = torch.randint(low=0, high=10, size=(x.shape[0], )).to(device)
 
     optimizer_D.zero_grad()
@@ -386,8 +348,3 @@ for epoch in range(1, num_epochs + 1):
         plt.xlim([1, epoch])
         plt.legend()
         plt.savefig(os.path.join(os.path.join(save_path, "loss.png")), dpi=300)
-
-# Just for you to check your Part 2 score
-score = compute_score(best_acc_test, 0.65, 0.69)
-print("Your final accuracy:", best_acc_test)
-print("Your Assignment Score:", score)
