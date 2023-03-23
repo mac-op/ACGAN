@@ -21,10 +21,6 @@ class Generator(nn.Module):
         self.num_classes = num_classes
         self.out_channels = out_channels
 
-        # #####
-        # TODO: Complete the generator architecture
-        # #####
-
         self.generator = nn.Sequential(
             nn.Linear(self.latent_dim + 10, 256*2*2),
             nn.LeakyReLU(0.2),
@@ -52,9 +48,6 @@ class Generator(nn.Module):
         )
 
     def forward(self, z, y_in):
-        # #####
-        # TODO: Complete the generator architecture
-        # #####
         y_in = F.one_hot(y_in, self.num_classes).to(device)
         z = torch.concat((z, y_in), dim=1)
         return self.generator(z)
@@ -92,9 +85,6 @@ class Discriminator(nn.Module):
             nn.LogSoftmax())
 
     def forward(self, x):
-        # #####
-        # TODO: Complete the discriminator architecture
-        # #####
         xd = self.discriminator(x)
         return self.score(xd), self.classifier(xd)
         
@@ -152,9 +142,6 @@ test_loader = torch.utils.data.DataLoader(
 
 # -----
 # Model
-# #####
-# TODO: Initialize your models HERE.
-# #####
 generator = Generator(latent_dim, 3, 10)
 generator.apply(weights_init)
 discriminator = Discriminator(3)
@@ -162,10 +149,6 @@ discriminator.apply(weights_init)
 
 # -----
 # Losses
-
-# #####
-# TODO: Initialize your loss criterion.
-# #####
 
 adv_loss = nn.BCELoss()
 aux_loss = nn.NLLLoss()
@@ -177,11 +160,6 @@ if torch.cuda.is_available():
     aux_loss = aux_loss.cuda()
 
 # Optimizers for Discriminator and Generator, separate
-
-# #####
-# TODO: Initialize your optimizer(s).
-# #####
-
 optimizer_D = optim.Adam(discriminator.parameters(), lr=lr)
 optimizer_G = optim.Adam(generator.parameters(), lr=lr)
 
@@ -192,17 +170,13 @@ optimizer_G = optim.Adam(generator.parameters(), lr=lr)
 def denormalize(x):
     """Denomalize a normalized image back to uint8.
     """
-    # #####
-    # TODO: Complete denormalization.
-    # #####
     x = x.permute((0, 2,3,1)) * 255
     x = x.detach().cpu().numpy().astype(np.uint8)
     return x
 
 
-# For visualization part
+# For visualization
 # Generate 20 random sample for visualization
-# Keep this outside the loop so we will generate near identical images with the same latent featuresper train epoch
 random_z = torch.randn((20, latent_dim)).to(device)
 random_y = torch.randint(low=0, high=10, size=(20, )).to(device)
 
@@ -268,7 +242,6 @@ def test(
                 inputs = inputs.cuda()
                 gts = gts.cuda()
 
-            # Forward only
             _, outputs = discriminator(inputs)
             _, preds = torch.max(outputs, 1)
             corrects += torch.sum(preds == gts.data)
